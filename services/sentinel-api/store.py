@@ -175,3 +175,66 @@ def save_run(
         error = f"SQLite save failed: {type(exc).__name__}: {exc}"
         logger.error(error)
         return {"backend": "none", "error": error}
+
+
+def list_runs(limit: int = 10) -> list[dict[str, Any]]:
+    """Return the newest runs from the same backend used by save_run."""
+    limit = max(1, min(int(limit), 50))
+    supabase_url = os.getenv("SUPABASE_URL", "").strip()
+    supabase_key = (
+        os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+        or os.getenv("SUPABASE_ANON_KEY", "").strip()
+    )
+
+    if supabase_url and supabase_key:
+        try:
+            from supabase import create_client
+
+            client = create_client(supabase_url, supabase_key)
+            response = (
+                client.table("runs")
+                .select("id,created_at,target_version,score_before,score_after")
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return [
+                {
+                    "run_id": row["id"],
+                    "created_at": row.get("created_at"),
+                    "target_version": row.get("target_version"),
+                    "score_before": row.get("score_before"),
+                    "score_after": row.get("score_after"),
+                }
+                for row in (response.data or [])
+            ]
+        except Exception as exc:  # noqa: BLE001 - fall back locally
+            logger.warning("Supabase run list unavailable, using SQLite: %s", exc)
+
+    path = _sqlite_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with sqlite3.connect(path) as conn:
+            _bootstrap(conn)
+            rows = conn.execute(
+                """
+                SELECT id, created_at, target_version, score_before, score_after
+                FROM runs
+                ORDER BY created_at DESC, rowid DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [
+            {
+                "run_id": row[0],
+                "created_at": row[1],
+                "target_version": row[2],
+                "score_before": row[3],
+                "score_after": row[4],
+            }
+            for row in rows
+        ]
+    except Exception as exc:  # noqa: BLE001 - history is optional, never break a run
+        logger.error("SQLite run list failed: %s", exc)
+        return []
