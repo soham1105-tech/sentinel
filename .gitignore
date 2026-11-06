@@ -1,5 +1,12 @@
 .env
+.env.local
+.env*.local
 .venv/
+node_modules/
+.next/
+out/
+.npm-cache/
+.e2e-tmp/
 __pycache__/
 *.py[cod]
 .pytest_cache/
