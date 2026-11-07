@@ -148,7 +148,11 @@ export default function HomePage() {
   }
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 sm:py-12">
+    <main className="relative isolate mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 sm:py-12">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(ellipse_at_top,rgba(110,231,183,0.07),transparent_62%)]"
+      />
       <SiteHeader />
 
       {apiDown ? (
@@ -163,7 +167,7 @@ export default function HomePage() {
               data-testid="run-sentinel"
               onClick={handleRun}
               disabled={running || retesting}
-              className="inline-flex w-fit items-center justify-center rounded-full bg-white px-7 py-3.5 text-sm font-black tracking-wide text-ink transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex w-fit items-center justify-center rounded-full bg-white px-7 py-3.5 text-sm font-black tracking-wide text-ink shadow-[0_8px_30px_rgba(255,255,255,0.09)] transition hover:-translate-y-0.5 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Run Sentinel
             </button>
@@ -193,7 +197,7 @@ export default function HomePage() {
                 statusNote={statusNote}
               />
             ) : running ? (
-              <section className="rounded-3xl border border-line bg-panel p-8 sm:p-12">
+              <section className="rounded-[2rem] border border-line bg-panel p-8 shadow-panel sm:p-12">
                 <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted">
                   Measured reliability
                 </p>
@@ -207,10 +211,10 @@ export default function HomePage() {
                 </p>
               </section>
             ) : (
-              <section className="rounded-3xl border border-line bg-panel p-8 sm:p-12">
+              <section className="rounded-[2rem] border border-line bg-panel p-8 shadow-panel sm:p-12">
                 <p
                   data-testid="empty-score"
-                  className="text-xl font-bold text-slate-200 sm:text-2xl"
+                  className="text-xl font-bold text-slate-100 sm:text-2xl"
                 >
                   No run yet — press Run Sentinel.
                 </p>

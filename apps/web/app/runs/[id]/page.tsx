@@ -96,7 +96,11 @@ export default function RunPage({ params }: RunPageProps) {
   }
 
   return (
-    <main className="mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 sm:py-12">
+    <main className="relative isolate mx-auto w-full max-w-7xl px-5 py-8 sm:px-8 sm:py-12">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[420px] bg-[radial-gradient(ellipse_at_top,rgba(110,231,183,0.07),transparent_62%)]"
+      />
       <SiteHeader />
 
       {apiDown ? (

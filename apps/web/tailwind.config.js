@@ -13,7 +13,12 @@ module.exports = {
         pass: "#22C55E",
         fail: "#EF4444",
         accent: "#6EE7B7",
-        muted: "#94A3B8",
+        muted: "#A7B4C7",
+      },
+      boxShadow: {
+        panel: "0 28px 80px rgba(0,0,0,0.28)",
+        "pass-glow": "0 0 46px rgba(34,197,94,0.16)",
+        "accent-glow": "0 0 34px rgba(110,231,183,0.35)",
       },
     },
   },

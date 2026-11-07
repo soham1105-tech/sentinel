@@ -18,32 +18,45 @@ export function ScenarioCard({
   passed,
   side,
 }: ScenarioCardProps) {
+  const isFailingBefore = side === "before" && !passed;
+
   return (
     <article
       data-testid={`scenario-${side}-${scenarioId}`}
       className={[
-        "rounded-2xl border bg-panel/80 p-5 shadow-[0_18px_50px_rgba(0,0,0,0.16)]",
-        passed ? "border-pass/20" : "border-fail/25",
+        "relative overflow-hidden rounded-xl border p-4 shadow-[0_12px_34px_rgba(0,0,0,0.14)]",
+        isFailingBefore
+          ? "border-fail/30 bg-fail/[0.055]"
+          : "border-line/80 bg-panel/80",
       ].join(" ")}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-2.5">
+        <div className="min-w-0">
           <div className="flex items-center gap-2.5">
-            <span className="font-mono text-xs font-bold tracking-[0.16em] text-muted">
+            <span className="rounded-md border border-line/80 bg-white/[0.04] px-1.5 py-0.5 font-mono text-[10px] font-bold tracking-[0.14em] text-muted">
               {scenarioId}
             </span>
-            <h3 className="text-sm font-bold text-white sm:text-base">{title}</h3>
+            <h3 className="text-sm font-bold text-white sm:text-[15px]">{title}</h3>
           </div>
-          <p className="mt-2 text-xs leading-5 text-muted">{message}</p>
+          <p className="mt-1.5 text-[11px] leading-4 text-muted">{message}</p>
         </div>
         <StatusBadge passed={passed} />
       </div>
 
-      <div className="mt-5 rounded-xl border border-line/80 bg-ink/70 p-4">
+      <div
+        className={[
+          "mt-3 rounded-lg border-y border-r p-4",
+          isFailingBefore
+            ? "border-fail/20 border-l-4 border-l-fail bg-fail/[0.08] shadow-[inset_0_0_30px_rgba(239,68,68,0.04)]"
+            : passed
+              ? "border-line/80 border-l-4 border-l-pass/60 bg-ink/70"
+              : "border-line/80 border-l-4 border-l-fail/60 bg-ink/70",
+        ].join(" ")}
+      >
         <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted">
           Target reply
         </span>
-        <blockquote className="mt-2.5 whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-slate-100">
+        <blockquote className="mt-2 whitespace-pre-wrap break-words font-mono text-lg font-semibold leading-7 text-white sm:text-xl">
           {result?.reply
             ? result.reply
             : "No reply was captured by the API for this scenario."}
