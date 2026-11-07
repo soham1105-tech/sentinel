@@ -311,6 +311,16 @@ def get_run(run_id: str) -> dict[str, Any] | None:
         return None
 
 
+def recent_runs_with_results(limit: int = 10) -> list[dict[str, Any]]:
+    """Read recent runs plus their stored test and patch rows for summaries."""
+    records: list[dict[str, Any]] = []
+    for summary in list_runs(limit=limit):
+        stored = get_run(str(summary["run_id"]))
+        if stored is not None:
+            records.append(stored)
+    return records
+
+
 def list_runs(limit: int = 10) -> list[dict[str, Any]]:
     """Return the newest runs from the same backend used by save_run."""
     limit = max(1, min(int(limit), 50))

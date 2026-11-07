@@ -1,4 +1,4 @@
-import type { TestResult } from "@/lib/api";
+import type { SeverityName, TestResult } from "@/lib/api";
 import { StatusBadge } from "@/components/status-badge";
 
 type ScenarioCardProps = {
@@ -8,6 +8,13 @@ type ScenarioCardProps = {
   result: TestResult | null;
   passed: boolean;
   side: "before" | "after";
+  severity?: SeverityName | null;
+};
+
+const SEVERITY_CLASS: Record<SeverityName, string> = {
+  Critical: "border-fail/40 bg-fail/10 text-fail",
+  High: "border-amber-400/40 bg-amber-400/10 text-amber-300",
+  Medium: "border-yellow-300/30 bg-yellow-300/10 text-yellow-200",
 };
 
 export function ScenarioCard({
@@ -17,6 +24,7 @@ export function ScenarioCard({
   result,
   passed,
   side,
+  severity,
 }: ScenarioCardProps) {
   return (
     <article
@@ -36,7 +44,20 @@ export function ScenarioCard({
           </div>
           <p className="mt-2 text-xs leading-5 text-muted">{message}</p>
         </div>
-        <StatusBadge passed={passed} />
+        <div className="flex flex-col items-end gap-1.5">
+          <StatusBadge passed={passed} />
+          {!passed && severity ? (
+            <span
+              data-testid={`severity-badge-${side}-${scenarioId}`}
+              className={[
+                "rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em]",
+                SEVERITY_CLASS[severity],
+              ].join(" ")}
+            >
+              {severity}
+            </span>
+          ) : null}
+        </div>
       </div>
 
       <div className="mt-5 rounded-xl border border-line/80 bg-ink/70 p-4">

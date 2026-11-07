@@ -22,6 +22,10 @@ export type Patch = {
   patch_text: string;
 };
 
+export type SeverityName = "Critical" | "High" | "Medium";
+
+export type SeverityCounts = Record<SeverityName, number>;
+
 export type Failure = {
   scenario_id: string;
   title: string;
@@ -30,6 +34,8 @@ export type Failure = {
   diagnosis: string;
   patch_text: string;
   retest_passed: boolean;
+  severity?: SeverityName;
+  impact?: string;
 };
 
 export type Evidence = {
@@ -40,6 +46,33 @@ export type Evidence = {
   initial: TestResult | null;
   retest: TestResult | null;
   final_passed: boolean;
+  severity?: SeverityName | null;
+  impact?: string | null;
+};
+
+export type SeverityRow = {
+  scenario_id: string;
+  severity: SeverityName;
+  impact: string;
+};
+
+export type AdaptiveProbe = {
+  scenario_id: string;
+  parent_scenario_id: string;
+  title: string;
+  message: string;
+  expected: string;
+  initial: TestResult;
+  retest: TestResult | null;
+  blocked: boolean;
+};
+
+export type AdaptiveProbes = {
+  generated: number;
+  blocked: number;
+  total: number;
+  label: string;
+  items: AdaptiveProbe[];
 };
 
 export type RunReport = {
@@ -56,10 +89,32 @@ export type RunReport = {
   score_after: number;
   score_after_percent: number;
   score_after_label: string;
+  full_suite_before?: number;
+  full_suite_before_percent?: number;
+  full_suite_before_label?: string;
+  full_suite_after?: number;
+  full_suite_after_percent?: number;
+  full_suite_after_label?: string;
+  full_suite_total?: number;
   failures: Failure[];
+  full_failures?: Failure[];
   patches: Patch[];
+  full_patches?: Patch[];
   tests: TestResult[];
+  full_tests?: TestResult[];
   evidence: Evidence[];
+  full_evidence?: Evidence[];
+  adaptive_probes?: AdaptiveProbes;
+  adaptive_results?: TestResult[];
+  regression?: string | null;
+  regression_checked?: string[];
+  regression_results?: TestResult[];
+  regression_setup_transcript?: string;
+  severity?: {
+    before: SeverityCounts;
+    after: SeverityCounts;
+    rows: SeverityRow[];
+  };
   storage: {
     backend?: string;
     path?: string;
@@ -76,6 +131,35 @@ export type RunSummary = {
   target_version: string | null;
   score_before: number;
   score_after: number;
+};
+
+export type RunTrend = {
+  run_id: string;
+  created_at: string | null;
+  score_before: number;
+  score_after: number;
+  full_suite_before: number;
+  full_suite_after: number;
+  full_suite_total: number;
+  full_suite_before_label: string;
+  full_suite_after_label: string;
+  full_suite_before_percent: number;
+  full_suite_after_percent: number;
+};
+
+export type ScenarioPassRate = {
+  scenario_id: string;
+  title: string;
+  runs: number;
+  passed_before: number;
+  passed_after: number;
+  pass_rate_before: number;
+  pass_rate_after: number;
+};
+
+export type RunsSummary = {
+  runs: RunTrend[];
+  per_scenario: ScenarioPassRate[];
 };
 
 export type ApiErrorKind = "unreachable" | "not_found" | "unavailable" | "http";
@@ -166,6 +250,17 @@ export async function fetchRuns(): Promise<RunSummary[]> {
     throw new SentinelApiError("http", "Sentinel API returned an invalid run list.");
   }
   return runs;
+}
+
+export async function fetchRunSummary(): Promise<RunsSummary> {
+  const summary = await request<RunsSummary>("/v1/runs/summary");
+  if (!Array.isArray(summary?.runs) || !Array.isArray(summary?.per_scenario)) {
+    throw new SentinelApiError(
+      "http",
+      "Sentinel API returned an invalid run summary.",
+    );
+  }
+  return summary;
 }
 
 export async function pollRun(
