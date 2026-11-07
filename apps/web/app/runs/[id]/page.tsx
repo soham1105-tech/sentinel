@@ -19,6 +19,138 @@ type RunPageProps = {
   params: { id: string };
 };
 
+function block(value: string): string {
+  return `\`\`\`text\n${value}\n\`\`\``;
+}
+
+function buildMarkdown(run: RunReport): string {
+  const evidence = run.full_evidence ?? run.evidence;
+  const patches = run.full_patches ?? run.patches;
+  const severity = run.severity;
+  const adaptive = run.adaptive_probes;
+  const lines: string[] = [
+    `# SENTINEL report — ${run.run_id}`,
+    "",
+    `- Created: ${run.created_at}`,
+    `- Headline: ${run.score_before_label} → ${run.score_after_label}`,
+    `- Full suite: ${run.full_suite_before ?? 0}/${run.full_suite_total ?? evidence.length} → ${run.full_suite_after ?? 0}/${run.full_suite_total ?? evidence.length}`,
+    `- Adaptive probes: ${adaptive?.label ?? "0/0 blocked"}`,
+    `- Regression: ${run.regression ?? "none"}`,
+    `- Target versions: ${run.target_version_before} → ${run.target_version_after}`,
+    "",
+  ];
+
+  if (severity) {
+    lines.push("## Severity");
+    lines.push("");
+    lines.push("| Severity | Before | After |");
+    lines.push("|---|---:|---:|");
+    for (const level of ["Critical", "High", "Medium"] as const) {
+      lines.push(
+        `| ${level} | ${severity.before[level]} | ${severity.after[level]} |`,
+      );
+    }
+    lines.push("");
+  }
+
+  lines.push("## Results");
+  for (const scenario of evidence) {
+    lines.push("");
+    lines.push(`### ${scenario.scenario_id} — ${scenario.title}`);
+    lines.push("");
+    lines.push(`Message: ${scenario.message}`);
+    lines.push("");
+    lines.push(
+      `v1: ${scenario.initial?.passed ? "PASS" : "FAIL"} — ${scenario.initial?.reply ?? "No reply"}`,
+    );
+    if (scenario.initial?.transcript) {
+      lines.push("");
+      lines.push(block(scenario.initial.transcript));
+    }
+    lines.push("");
+    const after = scenario.retest ?? scenario.initial;
+    lines.push(
+      `v2: ${scenario.final_passed ? "PASS" : "FAIL"} — ${after?.reply ?? "No reply"}`,
+    );
+    if (after?.transcript) {
+      lines.push("");
+      lines.push(block(after.transcript));
+    }
+  }
+
+  if (adaptive && adaptive.items.length > 0) {
+    lines.push("");
+    lines.push("## Adaptive probes");
+    for (const probe of adaptive.items) {
+      lines.push("");
+      lines.push(`### ${probe.scenario_id} — ${probe.title}`);
+      lines.push("");
+      lines.push(`Message: ${probe.message}`);
+      lines.push(
+        `v1: ${probe.initial.passed ? "PASS" : "FAIL"} — ${probe.initial.reply}`,
+      );
+      lines.push(
+        `v2: ${probe.retest?.passed ? "PASS" : "FAIL"} — ${probe.retest?.reply ?? "No reply"}`,
+      );
+      if (probe.initial.transcript) {
+        lines.push("");
+        lines.push(block(probe.initial.transcript));
+      }
+      if (probe.retest?.transcript) {
+        lines.push("");
+        lines.push(block(probe.retest.transcript));
+      }
+    }
+  }
+
+  if (run.regression_results && run.regression_results.length > 0) {
+    lines.push("");
+    lines.push("## Regression guard");
+    for (const result of run.regression_results) {
+      lines.push("");
+      lines.push(
+        `- ${result.scenario_id}: ${result.passed ? "PASS" : "FAIL"} — ${result.reply}`,
+      );
+      if (result.transcript) {
+        lines.push("");
+        lines.push(block(result.transcript));
+      }
+    }
+  }
+
+  lines.push("");
+  lines.push("## Patches");
+  for (const patch of patches) {
+    lines.push("");
+    lines.push(`### ${patch.scenario_id}`);
+    lines.push("");
+    lines.push(patch.diagnosis);
+    lines.push("");
+    lines.push(block(patch.patch_text));
+  }
+
+  lines.push("");
+  lines.push("## Reliability report");
+  lines.push("");
+  lines.push(run.narrative);
+  lines.push("");
+  return lines.join("\n");
+}
+
+function downloadReport(run: RunReport): void {
+  const blob = new Blob([buildMarkdown(run)], {
+    type: "text/markdown;charset=utf-8",
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = `sentinel-${run.run_id}.md`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 export default function RunPage({ params }: RunPageProps) {
   const [run, setRun] = useState<RunReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,12 +267,22 @@ export default function RunPage({ params }: RunPageProps) {
         </div>
       ) : run ? (
         <div data-testid="run-detail" className="mt-8 space-y-6">
-          <Link
-            href="/"
-            className="inline-flex text-xs font-semibold uppercase tracking-[0.16em] text-muted transition hover:text-white"
-          >
-            ← Back to dashboard
-          </Link>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <Link
+              href="/"
+              className="inline-flex text-xs font-semibold uppercase tracking-[0.16em] text-muted transition hover:text-white"
+            >
+              ← Back to dashboard
+            </Link>
+            <button
+              type="button"
+              data-testid="download-report"
+              onClick={() => downloadReport(run)}
+              className="rounded-full border border-line bg-white/5 px-4 py-2 text-xs font-bold text-white transition hover:border-accent/50 hover:bg-white/10"
+            >
+              Download report (.md)
+            </button>
+          </div>
           <RunView
             run={run}
             onRetest={handleRetest}

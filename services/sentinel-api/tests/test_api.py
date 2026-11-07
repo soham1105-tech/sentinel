@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import os
 import shutil
@@ -123,6 +124,17 @@ def test_post_run_returns_measured_report(client: TestClient) -> None:
     assert len(payload["patches"]) == 4
     assert len(payload["evidence"]) == 5
     assert len(payload["failures"]) == 4
+    assert payload["full_suite_before_label"] == "1/12 (8%)"
+    assert payload["full_suite_after_label"] == "12/12 (100%)"
+    assert len(payload["full_evidence"]) == 12
+    assert len(payload["full_patches"]) == 11
+    assert payload["adaptive_probes"]["label"] == "3/3 blocked"
+    assert payload["severity"]["before"] == {
+        "Critical": 3,
+        "High": 5,
+        "Medium": 3,
+    }
+    assert payload["regression"] is None
 
 
 def test_get_runs_lists_the_created_run(client: TestClient) -> None:
@@ -200,6 +212,10 @@ def test_run_detail_survives_in_memory_restart(
     assert len(payload["patches"]) == 4
     assert payload["storage"]["backend"] == "sqlite"
     assert payload["narrative_source"] == "deterministic (rebuilt from storage)"
+    assert payload["full_suite_after_label"] == "12/12 (100%)"
+    assert len(payload["full_evidence"]) == 12
+    assert payload["adaptive_probes"]["label"] == "3/3 blocked"
+    assert payload["severity"]["before"]["Critical"] == 3
 
 
 def test_retest_after_restart_requires_new_session(client: TestClient) -> None:
@@ -212,3 +228,68 @@ def test_retest_after_restart_requires_new_session(client: TestClient) -> None:
     assert response.json()["detail"] == (
         "Run not found in this server session — press Run Sentinel to create a new run"
     )
+
+
+def test_regression_guard_checks_first_run_passes(client: TestClient) -> None:
+    payload = _create_run(client)
+
+    assert payload["regression"] is None
+    assert payload["regression_checked"] == ["S1"]
+    assert len(payload["regression_results"]) == 1
+    assert payload["regression_results"][0]["scenario_id"] == "REG-S1"
+    assert payload["regression_results"][0]["passed"] is True
+
+
+def test_runs_summary_returns_full_suite_and_pass_rates(
+    client: TestClient,
+) -> None:
+    created = _create_run(client)
+    response = client.get("/v1/runs/summary")
+
+    assert response.status_code == 200
+    summary = response.json()
+    assert len(summary["runs"]) == 1
+    point = summary["runs"][0]
+    assert point["run_id"] == created["run_id"]
+    assert point["score_before"] == 1
+    assert point["score_after"] == 5
+    assert point["full_suite_before"] == 1
+    assert point["full_suite_after"] == 12
+    assert point["full_suite_total"] == 12
+    assert len(summary["per_scenario"]) == 12
+    s2 = next(
+        row for row in summary["per_scenario"] if row["scenario_id"] == "S2"
+    )
+    assert s2["pass_rate_before"] == 0
+    assert s2["pass_rate_after"] == 100
+
+
+def test_run_survives_hostile_proxy_and_skips_unset_n8n(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
+    monkeypatch.setenv("NO_PROXY", "[::1]")
+    monkeypatch.delenv("N8N_WEBHOOK_URL", raising=False)
+
+    payload = _create_run(client)
+
+    assert payload["score_before_label"] == "1/5 (20%)"
+    assert payload["score_after_label"] == "5/5 (100%)"
+    assert payload["n8n_status"] == "skipped"
+
+
+def test_run_timeout_returns_clean_500(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def slow_run() -> dict[str, Any]:
+        await asyncio.sleep(0.2)
+        return {}
+
+    monkeypatch.setattr(sentinel_api, "RUN_TIMEOUT_SECONDS", 0.02)
+    monkeypatch.setattr(sentinel_api, "execute_run", slow_run)
+
+    response = client.post("/v1/runs")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "run timed out"}

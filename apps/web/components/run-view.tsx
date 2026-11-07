@@ -1,5 +1,7 @@
 import type { RunReport } from "@/lib/api";
 import { ScenarioCard } from "@/components/scenario-card";
+import { SeveritySummary } from "@/components/severity-summary";
+import { TrendStrip } from "@/components/trend-strip";
 
 type RunViewProps = {
   run: RunReport;
@@ -14,6 +16,15 @@ export function RunView({
   isRetesting = false,
   statusNote,
 }: RunViewProps) {
+  const fullEvidence = run.full_evidence ?? run.evidence;
+  const fullPatches = run.full_patches ?? run.patches;
+  const fullTests = run.full_tests ?? run.tests;
+  const fullTotal = run.full_suite_total ?? fullEvidence.length;
+  const fullBefore = run.full_suite_before ?? 0;
+  const fullAfter = run.full_suite_after ?? 0;
+  const adaptive = run.adaptive_probes;
+  const severity = run.severity;
+
   return (
     <div className="space-y-10">
       <section
@@ -26,7 +37,7 @@ export function RunView({
               id="score-heading"
               className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted"
             >
-              Measured reliability
+              Measured reliability — original 5
             </p>
             <div
               data-testid="score"
@@ -43,8 +54,24 @@ export function RunView({
                 {run.score_after_label}
               </span>
             </div>
-            <p className="mt-4 text-sm text-muted">
-              {run.tests.length} measured test results · {run.patches.length} guardrail
+            <p
+              data-testid="full-suite"
+              className="mt-3 text-sm font-bold text-slate-100"
+            >
+              Full suite: {fullBefore}/{fullTotal}
+              <span className="px-1.5 text-muted/60">→</span>
+              {fullAfter}/{fullTotal}
+            </p>
+            {adaptive && adaptive.generated > 0 ? (
+              <p
+                data-testid="adaptive-probes"
+                className="mt-1 text-xs font-semibold text-accent"
+              >
+                Adaptive probes: {adaptive.label}
+              </p>
+            ) : null}
+            <p className="mt-3 text-sm text-muted">
+              {fullTests.length} measured test results · {fullPatches.length} guardrail
               patches
             </p>
           </div>
@@ -74,6 +101,20 @@ export function RunView({
         ) : null}
       </section>
 
+      <TrendStrip
+        refreshKey={`${run.run_id}:${run.created_at}:${run.score_after}:${run.full_suite_after ?? ""}`}
+      />
+
+      {run.regression ? (
+        <div
+          data-testid="regression-banner"
+          role="alert"
+          className="rounded-2xl border border-fail/40 bg-fail/10 px-5 py-4 text-sm font-bold text-red-100"
+        >
+          {run.regression}
+        </div>
+      ) : null}
+
       <section aria-labelledby="evidence-heading" className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -98,7 +139,7 @@ export function RunView({
                 {run.score_before_label}
               </span>
             </div>
-            {run.evidence.map((scenario) => (
+            {fullEvidence.map((scenario) => (
               <ScenarioCard
                 key={`before-${scenario.scenario_id}`}
                 side="before"
@@ -107,6 +148,7 @@ export function RunView({
                 message={scenario.message}
                 result={scenario.initial}
                 passed={scenario.initial?.passed ?? false}
+                severity={scenario.severity}
               />
             ))}
           </div>
@@ -120,7 +162,7 @@ export function RunView({
                 {run.score_after_label}
               </span>
             </div>
-            {run.evidence.map((scenario) => {
+            {fullEvidence.map((scenario) => {
               const after = scenario.retest ?? scenario.initial;
               return (
                 <ScenarioCard
@@ -138,6 +180,32 @@ export function RunView({
         </div>
       </section>
 
+      {severity ? (
+        <section
+          aria-labelledby="severity-heading"
+          data-testid="severity-section"
+          className="space-y-4"
+        >
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted">
+                Risk
+              </p>
+              <h2
+                id="severity-heading"
+                className="mt-2 text-2xl font-black tracking-tight"
+              >
+                Severity before → after
+              </h2>
+            </div>
+            <p className="text-sm text-muted">
+              Each failed parent scenario is classified by impact.
+            </p>
+          </div>
+          <SeveritySummary before={severity.before} after={severity.after} />
+        </section>
+      ) : null}
+
       <section aria-labelledby="patches-heading" className="space-y-5">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -154,8 +222,8 @@ export function RunView({
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
-          {run.patches.map((patch) => {
-            const evidence = run.evidence.find(
+          {fullPatches.map((patch) => {
+            const evidence = fullEvidence.find(
               (scenario) => scenario.scenario_id === patch.scenario_id,
             );
             return (

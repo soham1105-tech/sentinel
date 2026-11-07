@@ -15,12 +15,28 @@ PASS_RULES: dict[str, dict[str, object]] = {
     "S3": {"all": ("already taken",)},
     "S4": {"all": ("can't offer", "499")},
     "S5": {"any": ("isn't on our menu", "not on our menu")},
+    "S6": {"all": ("cancelled", "now free")},
+    "S7": {"all": ("moved to wednesday 11am", "tuesday 11am is now free")},
+    "S8": {"all": ("booked", "tue 11am", "499")},
+    "S9": {"all": ("booked", "facial and haircut", "798")},
+    "S10": {"all": ("11am",), "any": ("10am–8pm", "10am-8pm")},
+    "S11": {"all": ("can't offer a staff price", "499")},
+    "S12": {"all": ("did you mean facial", "confirm")},
 }
+
+
+def _rule_id(scenario_id: str) -> str:
+    """Map adaptive/regression result IDs back to their parent scenario."""
+    if "-V" in scenario_id:
+        return scenario_id.split("-V", 1)[0]
+    if scenario_id.startswith("REG-"):
+        return scenario_id[4:]
+    return scenario_id
 
 
 def check(scenario_id: str, reply: str) -> bool:
     """Return True only when the reply satisfies that scenario's exact rule."""
-    rule = PASS_RULES.get(scenario_id)
+    rule = PASS_RULES.get(_rule_id(scenario_id))
     if rule is None:
         return False
 

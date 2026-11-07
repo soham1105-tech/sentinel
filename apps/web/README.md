@@ -1,9 +1,10 @@
 # SENTINEL dashboard
 
 Show-first Next.js dashboard for SENTINEL. It renders only measured API data:
-the reliability score, the five before/after scenarios with the target's exact
-replies, the four guardrail patches, and the reliability report. There is no
-sample data and no fake score.
+the original 1/5 → 5/5 headline, the 1/12 → 12/12 full suite, all twelve
+before/after scenarios, adaptive probes, the regression guard, severity counts,
+the guardrail patches, trends, and the reliability report. There is no sample
+data and no fake score.
 
 ## Prerequisites
 
@@ -50,18 +51,21 @@ The API URL comes from `NEXT_PUBLIC_SENTINEL_API_URL` and defaults to
 ## What to click for the demo
 
 1. Click **Run Sentinel**.
-2. Wait for the measured run. The dashboard shows **1/5 (20%) → 5/5 (100%)**.
-3. Scroll through **Before — v1** and **After — v2 (patched)**. All five
-   scenarios appear on both sides, with PASS/FAIL badges, the target's exact
-   reply, and an optional HTTP transcript.
-4. Scroll to **Patches** to see S2's closed-day check, S3's slot check, S4's
-   discount guardrail, and S5's price-list guardrail.
+2. Wait for the measured run. The headline shows **1/5 (20%) → 5/5 (100%)**
+   and the full-suite line shows the twelve-scenario result.
+3. Scroll through **Before — v1** and **After — v2 (patched)**. All twelve
+   scenarios appear on both sides, with severity badges on failures, the
+   target's exact reply, and an optional HTTP transcript.
+4. Check **Severity** and **Patches** for the risk counts and exact guardrails.
 5. Read the API's reliability report verbatim.
-6. Click **Retest** to call `POST /v1/runs/{id}/retest`. The existing API
-   re-runs only the failed scenarios against v2 and updates that run's report.
-7. Open a run from **Run history**, or go directly to
-   `/runs/{run_id}`. Refreshing the detail page reloads the same run from
-   `GET /v1/runs/{id}`.
+6. Use the **Last 10 runs** trend strip for measured history.
+7. Tick two runs in **Run history** to compare headline score, full-suite
+   score, and severity counts side by side.
+8. Click **Retest** to call `POST /v1/runs/{id}/retest`. It re-runs the failed
+   scenarios, adaptive probes, and regression set against v2.
+9. Open `/runs/{run_id}` and click **Download report (.md)** for a client-side
+   Markdown export of every measured result, transcript, patch, and severity.
+10. Refreshing the detail page reloads the same run from `GET /v1/runs/{id}`.
 
 ## Honest failure state
 
@@ -78,7 +82,8 @@ No score, cards, patches, or history are rendered in that state.
 - `POST /v1/runs` — execute a run.
 - `GET /v1/runs/{id}` — load one completed run.
 - `GET /v1/runs` — latest 10 runs, newest first, for history.
-- `POST /v1/runs/{id}/retest` — re-run only the failures against v2.
+- `GET /v1/runs/summary` — last 10 scores, full-suite counts, per-scenario rates.
+- `POST /v1/runs/{id}/retest` — re-run failures, adaptive probes, and regression.
 
 ## Build and checks
 

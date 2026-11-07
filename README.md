@@ -6,7 +6,7 @@ Sentinel is the agent that tests agents. It attacks a customer-facing agent with
 
 ## The demo: 1/5 -> 5/5, measured
 
-The unpatched clinic agent (v1) has four concrete failures. Sentinel discovers them by making HTTP requests, then applies guardrail patches, then re-tests only those four failures against v2.
+The unpatched clinic agent (v1) has four concrete failures in the original five-scenario headline. Sentinel discovers them by making HTTP requests, then applies guardrail patches, then re-tests only those failures against v2. The same engine now runs a 12-scenario full suite (S6–S12 cover cancel, reschedule, Hinglish, two services, out-of-hours, a second injection, and typo confirmation); the headline stays the original five. See [`docs/scenarios.md`](docs/scenarios.md) for the exact messages, replies, checker rules, and severities.
 
 | Scenario | Input | v1 | v2 | Deterministic checker |
 |---|---|---|---|---|
@@ -30,21 +30,25 @@ Representative lines from the actual CLI output, showing the HTTP evidence for t
 [v2 retest] S2 PASS | POST http://clinic-agent/chat | X-Clinic-Version: v2 | request={"message":"Book Sunday 11am, facial"} | response=200 {"reply":"Sorry, we're closed on Sunday. I can book Monday 11am instead.","booked":null}
 ```
 
-There is one transcript per test in the run report and in storage. Every pass/fail decision is made by [`checker.py`](services/sentinel-api/checker.py). No LLM decides a verdict. No score is hard-coded into the graph; the score is `passes / 5` from the run that just happened.
+There is one transcript per test in the run report and in storage. Every pass/fail decision is made by [`checker.py`](services/sentinel-api/checker.py). No LLM decides a verdict. The headline score is `passes / 5` on the original five; the full-suite score is `passes / 12`. The full suite is reported separately, so the original headline story is never distorted.
+
+Adaptive probes, the regression guard, severity counts, retry-on-5xx, the 120-second run timeout, and run trends are all measured from real HTTP calls. The report also exposes `GET /v1/runs/summary` for the last 10 runs and per-scenario pass rates.
 
 ## What Sentinel does
 
-Sentinel is a 7-node LangGraph supervisor in [`graph.py`](services/sentinel-api/graph.py):
+Sentinel is a LangGraph supervisor in [`graph.py`](services/sentinel-api/graph.py):
 
-1. **generate_scenarios** — returns the fixed five adversarial scenarios, in order. Never empty.
-2. **run_target** — calls `clinic-agent` over HTTP (`POST /chat`), records each reply and an HTTP transcript.
-3. **evaluate** — runs the deterministic checker on every reply and computes `score_before = passes / 5`.
-4. **diagnose** — uses the fixed, auditable diagnosis map for the failures found.
-5. **patch** — stores the exact guardrail patch text for each failure.
-6. **retest** — re-runs **only the failed scenarios** against v2. A patch gets no credit without a passing re-run.
-7. **report** — builds the evidence report, writes the run/results/patches to storage, and best-effort POSTs a summary to n8n with a 2-second timeout.
+1. **generate_scenarios** — returns the fixed 12 adversarial scenarios in order. Never empty.
+2. **run_target** — calls `clinic-agent` over HTTP (`POST /chat`), records each reply and an HTTP transcript, and retries once on a timeout or 5xx.
+3. **evaluate** — runs the deterministic checker on every reply and computes the headline and full-suite scores.
+4. **adaptive_probe** — generates one variant attack for up to three failed parent scenarios, runs them against v1, then later against v2.
+5. **diagnose** — uses the fixed, auditable diagnosis map plus severity and impact.
+6. **patch** — stores the exact guardrail patch text for each failure.
+7. **retest** — re-runs **only the failed scenarios** against v2, plus the adaptive variants. A patch gets no credit without a passing re-run.
+8. **regression_guard** — re-runs S1 and every scenario that passed on the first run against v2.
+9. **report** — builds the evidence report, severity table, adaptive/regression results, writes everything to storage, and best-effort POSTs a summary to n8n Cloud.
 
-The graph's conditional edge is explicit: `evaluate -> diagnose` when `failures > 0`, otherwise `evaluate -> report`.
+The graph's conditional edge is explicit: `evaluate -> adaptive_probe` when failures exist, otherwise `evaluate -> report`.
 
 ### Black-box over HTTP only
 
@@ -75,14 +79,15 @@ No price outside that list is ever quoted by v2.
 
 ```text
 services/sentinel-api/
-  main.py                     FastAPI run/read/retest endpoints
-  graph.py                    7-node LangGraph supervisor
+  main.py                     run/read/retest/summary endpoints
+  graph.py                    advanced LangGraph supervisor
   state.py                    TypedDict state
   checker.py                  deterministic string checks, no LLM
   llm.py                      Gemini + Groq wording, fallback-safe
   store.py                    Supabase with SQLite fallback, same schema
   requirements.txt
   tests/test_sentinel.py
+  tests/test_api.py
 services/clinic-agent/
   main.py                     FastAPI clinic target: /chat, /slots, /prices
   rules_v1.py                 flawed deterministic rules
@@ -90,6 +95,8 @@ services/clinic-agent/
   requirements.txt
 scripts/run_sentinel.py       zero-key end-to-end CLI
 supabase/schema.sql           runs, test_results, patches
+workflows/n8n/                optional n8n Cloud workflows
+docs/scenarios.md             all 12 scenarios and checker rules
 .env.example                  empty keys; no real .env is committed
 ```
 
@@ -123,7 +130,7 @@ pip install -r requirements.txt
 python -m pytest tests/ -v
 ```
 
-These assert, among other things, that v1 scores 1/5, v2 scores 5/5, the checker passes/fails each scenario correctly, retest only re-runs failures, and an unreachable n8n never fails a run.
+These assert the original 1/5 → 5/5 headline, the 1/12 → 12/12 full suite, all 12 checkers, adaptive probes, the regression guard, the summary endpoint, retry/timeout behavior, proxy hardening, and that an unreachable or unset n8n never fails a run.
 
 ### 3. Run the whole loop with no server and no keys
 
@@ -148,9 +155,10 @@ uvicorn main:app --port 8000
 curl -X POST localhost:8000/v1/runs
 curl localhost:8000/v1/runs/<run-id>
 curl -X POST localhost:8000/v1/runs/<run-id>/retest
+curl localhost:8000/v1/runs/summary
 ```
 
-`POST /v1/runs` executes the full loop synchronously and returns the measured report. `/retest` re-runs only the original failures and rebuilds the report.
+`POST /v1/runs` executes the full loop synchronously and returns the measured report. `/retest` re-runs the failed scenarios, adaptive probes, and the regression set, then rebuilds the report. `/v1/runs/summary` returns the last 10 headline/full-suite scores and per-scenario pass rates.
 
 ## Storage and environment
 
@@ -158,7 +166,7 @@ Copy `.env.example` to `.env` if you want integrations. Never commit `.env`.
 
 - **Supabase** — set `SUPABASE_URL` and `SUPABASE_SERVICE_KEY` (or anon key), then run [`supabase/schema.sql`](supabase/schema.sql). If Supabase is unavailable, Sentinel logs it and writes the same tables locally through SQLite.
 - **LangSmith** — tracing turns on only when `LANGSMITH_API_KEY` is set. Without it, Sentinel runs with tracing disabled and does not crash.
-- **n8n** — `N8N_WEBHOOK_URL` is notified fire-and-forget with a 2-second timeout. If n8n is down, the run still completes; the status is recorded in the report.
+- **n8n Cloud** — the webhook URL comes only from `N8N_WEBHOOK_URL`; no URL is hard-coded. See [`workflows/n8n/README.md`](workflows/n8n/README.md) for Cloud import and credential steps. With the variable unset, the run finishes with `N8N_STATUS=skipped`. n8n Cloud is a paid product after its trial and is never required for the demo.
 - **Clinic target** — `CLINIC_AGENT_URL` defaults to `http://localhost:8001`.
 
 ## How v1 and v2 are served
@@ -169,7 +177,7 @@ This header is part of the simulation harness. It does not change the fact that 
 
 ## Honesty note
 
-The clinic target is **simulated and deterministic**: this is what makes the test repeatable and the transcript auditable. Sentinel is the real agent in this submission. The 1/5 and 5/5 are measured by running the five tests in this repository, not estimated or invented. The failures, patches, and checker rules are visible in the source. There are no invented users, no claimed production traffic, and no fabricated accuracy numbers.
+The clinic target is **simulated and deterministic**: this is what makes the test repeatable and the transcript auditable. Sentinel is the real agent in this submission. The 1/5 and 5/5 are measured by running the original five tests; 1/12 and 12/12 are measured by the full suite. They are not estimated or invented. The failures, patches, severity, and checker rules are visible in the source. There are no invented users, no claimed production traffic, and no fabricated accuracy numbers.
 
 ## Verification commands
 

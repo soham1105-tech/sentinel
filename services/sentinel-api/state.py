@@ -36,11 +36,20 @@ class SentinelState(TypedDict, total=False):
     initial_version: str
     scenarios: list[Scenario]
     results: list[TestResult]
+    full_results: list[TestResult]
+    adaptive_results: list[TestResult]
+    regression_results: list[TestResult]
     patches: list[PatchRecord]
+    full_patches: list[PatchRecord]
     score_before: int
     score_after: int
+    full_suite_before: int
+    full_suite_after: int
     failures: list[str]
+    full_failures: list[str]
     diagnoses: dict[str, str]
+    regression_checked: list[str]
+    regression_setup_transcript: str
     report: dict[str, Any]
     n8n_status: str
     store_status: dict[str, Any]

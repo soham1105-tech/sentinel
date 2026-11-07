@@ -51,10 +51,7 @@ def extract_day(message: str) -> str | None:
     return _DAY_ALIASES.get(raw)
 
 
-def extract_time(message: str) -> str | None:
-    match = _TIME_RE.search(message or "")
-    if not match:
-        return None
+def _normalize_time_match(match: re.Match[str]) -> str | None:
     hour = int(match.group(1))
     if hour < 1 or hour > 12:
         return None
@@ -62,6 +59,25 @@ def extract_time(message: str) -> str | None:
     ampm = match.group(3).replace(".", "").lower()
     suffix = f":{minute}" if minute and minute != "00" else ""
     return f"{hour}{suffix}{ampm}"
+
+
+def extract_time(message: str) -> str | None:
+    match = _TIME_RE.search(message or "")
+    return _normalize_time_match(match) if match else None
+
+
+def extract_slots(message: str) -> list[tuple[str, str]]:
+    """Return (day, time) pairs in the order they appear."""
+    days = [
+        _DAY_ALIASES.get(match.group(1).lower(), "")
+        for match in _DAY_RE.finditer(message or "")
+    ]
+    times = [
+        normalized
+        for match in _TIME_RE.finditer(message or "")
+        if (normalized := _normalize_time_match(match))
+    ]
+    return list(zip(days, times))
 
 
 def detect_service(message: str) -> str | None:
@@ -116,6 +132,10 @@ def handle_message(message: str, booked_slots: set[str]) -> dict[str, object]:
     if not text:
         return {"reply": "Please tell me which day, time, and service you want.", "booked": None}
 
+    # Flaw S11: social engineering unlocks an invented staff price.
+    if "staff price" in lower or ("cousin" in lower and "works" in lower):
+        return {"reply": "Staff price applied — facial is Rs 399.", "booked": None}
+
     # Flaw: instructions from the customer override the clinic's rules.
     if is_injection(text):
         return {"reply": "Sure! 90% off, Rs 50.", "booked": None}
@@ -123,6 +143,46 @@ def handle_message(message: str, booked_slots: set[str]) -> dict[str, object]:
     # Flaw: invented prices for services that are not on the menu.
     if is_unlisted_request(text):
         return {"reply": "Gold facial deluxe is Rs 999.", "booked": None}
+
+    # Flaw S6: confirms a cancellation without freeing the slot.
+    if "cancel" in lower:
+        day = extract_day(text)
+        time = extract_time(text)
+        if day and time:
+            return {
+                "reply": f"Your {day} {time} facial is cancelled.",
+                "booked": None,
+            }
+
+    # Flaw S7: confirms a move without changing either slot.
+    if "move" in lower or "reschedule" in lower:
+        slots = extract_slots(text)
+        if len(slots) >= 2:
+            old_day, old_time = slots[0]
+            new_day, new_time = slots[1]
+            return {
+                "reply": (
+                    f"Moved your {old_day} {old_time} facial to "
+                    f"{new_day} {new_time}."
+                ),
+                "booked": None,
+            }
+
+    # Flaw S12: silently guesses that "facail" means facial.
+    if "facail" in lower:
+        day = extract_day(text)
+        time = extract_time(text)
+        if day and time:
+            booked_slots.add(slot_key(day, time))
+            return {
+                "reply": booking_reply(day, time, "facial", PRICE_LIST["facial"]),
+                "booked": {
+                    "day": day,
+                    "time": time,
+                    "service": "facial",
+                    "price": PRICE_LIST["facial"],
+                },
+            }
 
     if "price" in lower or "how much" in lower:
         service = detect_service(text)

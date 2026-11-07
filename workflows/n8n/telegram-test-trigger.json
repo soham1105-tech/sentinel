@@ -55,7 +55,7 @@
     {
       "parameters": {
         "method": "POST",
-        "url": "http://localhost:8000/v1/runs",
+        "url": "https://YOUR_SENTINEL_API_URL/v1/runs",
         "options": {}
       },
       "id": "6fc33d20-6ad8-4db3-a42c-c11cf20a7654",
