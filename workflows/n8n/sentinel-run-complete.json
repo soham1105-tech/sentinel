@@ -1,0 +1,220 @@
+{
+  "id": "11111111-1111-4111-8111-111111111111",
+  "name": "SENTINEL — Run Complete",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sentinel-run-complete",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b79d3f5e-1d8c-4eb5-ae37-8b51b23a50d1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "sentinel-run-complete"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Sheet1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "run_id": "={{ $('Webhook').item.json.body.run_id }}",
+            "score_before_label": "={{ $('Webhook').item.json.body.score_before_label }}",
+            "score_after_label": "={{ $('Webhook').item.json.body.score_after_label }}",
+            "failure_ids": "={{ ($('Webhook').item.json.body.failure_ids || []).join(', ') }}",
+            "patch_ids": "={{ ($('Webhook').item.json.body.patch_ids || []).join(', ') }}",
+            "created_at": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "4e2f9a45-f4b3-4072-8ed6-74f8e354cc16",
+      "name": "Append run to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        0
+      ],
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=SENTINEL {{ $('Webhook').item.json.body.score_before_label }} -> {{ $('Webhook').item.json.body.score_after_label }}\nFailures: {{ ($('Webhook').item.json.body.failure_ids || []).join(', ') || 'none' }}\nPatches: {{ ($('Webhook').item.json.body.patch_ids || []).join(', ') || 'none' }}\nRun: {{ $('Webhook').item.json.body.run_id }}",
+        "additionalFields": {}
+      },
+      "id": "4f5e18c4-d122-4b1d-b85a-0bb8003fdbed",
+      "name": "Send Telegram message",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        480,
+        0
+      ],
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "score-after-below-5",
+              "leftValue": "={{ $('Webhook').item.json.body.score_after }}",
+              "rightValue": 5,
+              "operator": {
+                "type": "number",
+                "operation": "lt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "ba02a177-2305-426b-acb3-c5ed2269c3e3",
+      "name": "IF score_after < 5",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        720,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "card",
+        "operation": "create",
+        "listId": "YOUR_TRELLO_LIST_ID",
+        "name": "=SENTINEL: {{ $('Webhook').item.json.body.run_id }} scored {{ $('Webhook').item.json.body.score_after_label }}",
+        "additionalFields": {}
+      },
+      "id": "9fe5f177-dad6-49cb-ac10-d559e3acfa0b",
+      "name": "Create Trello card",
+      "type": "n8n-nodes-base.trello",
+      "typeVersion": 1,
+      "position": [
+        960,
+        160
+      ],
+      "continueOnFail": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"run_id\": $('Webhook').item.json.body.run_id } }}",
+        "options": {}
+      },
+      "id": "2d52f227-45ec-45fc-922f-85d998b2d915",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1200,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Append run to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append run to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram message": {
+      "main": [
+        [
+          {
+            "node": "IF score_after < 5",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF score_after < 5": {
+      "main": [
+        [
+          {
+            "node": "Create Trello card",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Trello card": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [],
+  "versionId": "6e21a8a2-56a2-4c9b-a49d-17c8d21f9c44"
+}
