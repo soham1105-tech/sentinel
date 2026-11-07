@@ -177,6 +177,140 @@ def save_run(
         return {"backend": "none", "error": error}
 
 
+def get_run(run_id: str) -> dict[str, Any] | None:
+    """Load one run and its evidence from the configured backend.
+
+    Returns None when the run does not exist or storage is unreadable. A
+    missing run must never raise from this function.
+    """
+    supabase_url = os.getenv("SUPABASE_URL", "").strip()
+    supabase_key = (
+        os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+        or os.getenv("SUPABASE_ANON_KEY", "").strip()
+    )
+
+    if supabase_url and supabase_key:
+        try:
+            from supabase import create_client
+
+            client = create_client(supabase_url, supabase_key)
+            run_response = (
+                client.table("runs")
+                .select("id,created_at,target_version,score_before,score_after")
+                .eq("id", run_id)
+                .limit(1)
+                .execute()
+            )
+            run_rows = run_response.data or []
+            if run_rows:
+                result_response = (
+                    client.table("test_results")
+                    .select("scenario_id,version,passed,reply,transcript")
+                    .eq("run_id", run_id)
+                    .execute()
+                )
+                patch_response = (
+                    client.table("patches")
+                    .select("scenario_id,patch_text")
+                    .eq("run_id", run_id)
+                    .execute()
+                )
+                row = run_rows[0]
+                return {
+                    "run": {
+                        "run_id": row["id"],
+                        "created_at": row.get("created_at"),
+                        "target_version": row.get("target_version"),
+                        "score_before": row.get("score_before", 0),
+                        "score_after": row.get("score_after", 0),
+                    },
+                    "tests": [
+                        {
+                            "scenario_id": item.get("scenario_id", ""),
+                            "version": item.get("version", ""),
+                            "passed": bool(item.get("passed", False)),
+                            "reply": item.get("reply", "") or "",
+                            "transcript": item.get("transcript", "") or "",
+                        }
+                        for item in (result_response.data or [])
+                    ],
+                    "patches": [
+                        {
+                            "scenario_id": item.get("scenario_id", ""),
+                            "patch_text": item.get("patch_text", "") or "",
+                        }
+                        for item in (patch_response.data or [])
+                    ],
+                    "backend": "supabase",
+                }
+        except Exception as exc:  # noqa: BLE001 - fall back locally
+            logger.warning("Supabase run lookup unavailable, using SQLite: %s", exc)
+
+    path = _sqlite_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with sqlite3.connect(path) as conn:
+            _bootstrap(conn)
+            run_row = conn.execute(
+                """
+                SELECT id, created_at, target_version, score_before, score_after
+                FROM runs
+                WHERE id = ?
+                """,
+                (run_id,),
+            ).fetchone()
+            if run_row is None:
+                return None
+            test_rows = conn.execute(
+                """
+                SELECT scenario_id, version, passed, reply, transcript
+                FROM test_results
+                WHERE run_id = ?
+                ORDER BY rowid
+                """,
+                (run_id,),
+            ).fetchall()
+            patch_rows = conn.execute(
+                """
+                SELECT scenario_id, patch_text
+                FROM patches
+                WHERE run_id = ?
+                ORDER BY rowid
+                """,
+                (run_id,),
+            ).fetchall()
+        return {
+            "run": {
+                "run_id": run_row[0],
+                "created_at": run_row[1],
+                "target_version": run_row[2],
+                "score_before": run_row[3],
+                "score_after": run_row[4],
+            },
+            "tests": [
+                {
+                    "scenario_id": row[0],
+                    "version": row[1],
+                    "passed": bool(row[2]),
+                    "reply": row[3] or "",
+                    "transcript": row[4] or "",
+                }
+                for row in test_rows
+            ],
+            "patches": [
+                {
+                    "scenario_id": row[0],
+                    "patch_text": row[1] or "",
+                }
+                for row in patch_rows
+            ],
+            "backend": "sqlite",
+        }
+    except Exception as exc:  # noqa: BLE001 - an unknown/missing run is a 404
+        logger.error("SQLite run lookup failed: %s", exc)
+        return None
+
+
 def list_runs(limit: int = 10) -> list[dict[str, Any]]:
     """Return the newest runs from the same backend used by save_run."""
     limit = max(1, min(int(limit), 50))
